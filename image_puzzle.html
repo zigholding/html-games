@@ -32,10 +32,6 @@ body{
 .btn:active{transform:scale(.95)}
 .btn.primary{background:#3b6ef5;border-color:#3b6ef5;color:#fff}
 .btn.primary:hover{background:#4d7cff}
-.btn.success{background:#1f9d55;border-color:#1f9d55;color:#fff}
-.btn.success:hover{background:#25b463}
-.btn.mode{background:#2a3350;border-color:#3f4c78;color:#cfd9f5}
-.btn.mode.active{background:#b8760d;border-color:#e29010;color:#fff}
 .btn:disabled{opacity:.35;pointer-events:none}
 
 .stat{
@@ -120,9 +116,6 @@ body{
   display:block;max-width:100%;max-height:min(38vh,320px);
   border-radius:6px;pointer-events:none;
 }
-#refPanel .cap{
-  font-size:10.5px;color:#6b7386;margin-top:6px;text-align:center;
-}
 @keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 
 /* ── 拼图块 ── */
@@ -188,14 +181,12 @@ body{
   <div id="topbar">
     <input type="file" id="fileInput" accept="image/*" hidden>
     <button class="btn primary" id="btnUpload">📷 图片</button>
-    <button class="btn mode" id="btnMode" disabled>🔗 分组</button>
     <div class="stat"><span class="k">时间</span><span class="v" id="timerEl">00:00</span></div>
-    <div class="stat"><span class="k">块数</span><span class="v" id="countEl">0</span></div>
+    <div class="stat" title="总块数减去当前最大一组的块数"><span class="k">剩余</span><span class="v" id="countEl">0</span></div>
     <div class="spacer"></div>
     <button class="btn" id="btnFit" title="复位视图">⤢</button>
     <button class="btn" id="btnShuffle" disabled>🔀</button>
     <button class="btn" id="btnRecut" disabled>✂️</button>
-    <button class="btn success" id="btnSubmit" disabled>✓ 提交</button>
   </div>
 
   <div id="diffbar">
@@ -213,7 +204,6 @@ body{
     <button class="btn" id="refToggle">👁 原图</button>
     <div id="refPanel">
       <img id="refImg" alt="原图">
-      <div class="cap">拖动空白处平移 · 双指缩放</div>
     </div>
 
     <div id="tutorial"></div>
@@ -304,7 +294,6 @@ const levelRange = $('levelRange');
 const levelLabel = $('levelLabel');
 const rotRandom  = $('rotRandom');
 const tutorialEl = $('tutorial');
-const btnMode    = $('btnMode');
 
 /* ══════════════════════════════════════════════
    小工具
@@ -740,13 +729,25 @@ function separatePiece(p) {
   const g = groupOf(p);
   if (g.length <= 1) return false;
   p.groupId = state.nextGid++;
+  updateHUD();
   return true;
 }
 
 /* ══════════════════════════════════════════════
    HUD
    ══════════════════════════════════════════════ */
-function updateHUD() { countEl.textContent = String(state.total); }
+function updateHUD() {
+  let max = 0;
+  if (state.pieces.length) {
+    const counts = new Map();
+    for (const p of state.pieces) {
+      const n = (counts.get(p.groupId) || 0) + 1;
+      counts.set(p.groupId, n);
+      if (n > max) max = n;
+    }
+  }
+  countEl.textContent = String(Math.max(0, state.total - max));
+}
 function updateLevelLabel() {
   const lv = LEVELS[state.level - 1];
   let txt = `${lv.name} · 约${lv.target}块`;
@@ -784,27 +785,6 @@ function stopTimer() {
   state.elapsed = Date.now() - state.startTime;
   timerEl.textContent = fmtTime(state.elapsed);
 }
-
-/* ══════════════════════════════════════════════
-   模式
-   ══════════════════════════════════════════════ */
-function updateModeBtn() {
-  if (state.mode === 'group') {
-    btnMode.textContent = '🔗 分组';
-    btnMode.classList.remove('active');
-  } else {
-    btnMode.textContent = '✂️ 分离';
-    btnMode.classList.add('active');
-  }
-}
-
-btnMode.addEventListener('click', () => {
-  state.mode = state.mode === 'group' ? 'separate' : 'group';
-  updateModeBtn();
-  showTutorial(state.mode === 'group'
-    ? '分组模式：拖动 / 双击旋转整组'
-    : '分离模式：拖动 / 双击只操作单块');
-});
 
 /* ══════════════════════════════════════════════
    新游戏
@@ -853,11 +833,9 @@ function startNewGame() {
   emptyHint.classList.add('hidden');
   $('btnShuffle').disabled = false;
   $('btnRecut').disabled = false;
-  $('btnSubmit').disabled = false;
-  btnMode.disabled = false;
 
   requestAnimationFrame(() => fitView());
-  showTutorial('拖动块拼合 · 双击旋转 90° · 顶部按钮切换分组 / 分离');
+  showTutorial('拖动块拼合 · 双击旋转 90°');
 }
 
 function reshuffleAll() {
@@ -868,8 +846,11 @@ function reshuffleAll() {
   scatterPieces();
   applyInitialRotation();
   renderAllPieces();
+  resetTimer();
+  state.started = false;
+  updateHUD();
   fitView();
-  showTutorial('已重新打乱（计时继续）');
+  showTutorial('已重新打乱');
 }
 
 /* ══════════════════════════════════════════════
@@ -914,6 +895,8 @@ function trySnapAndMerge(groupPieces) {
 
   // 重绘涉及的两个组
   refreshGroupVisuals([...groupPieces, best.target]);
+  updateHUD();
+  if (puzzleSolved()) finishPuzzle();
   return true;
 }
 
@@ -956,14 +939,10 @@ function rotatePiece(p) {
     for (const x of group) x.groupId = gid;
 
     refreshGroupVisuals(group);
-    showTutorial('整组旋转 90°（需转回 0° 才能吸附）');
   } else {
     p.rot = ((p.rot + 90) % 360 + 360) % 360;
     p.el.style.transform = `rotate(${p.rot}deg)`;
     renderPieceCanvas(p);
-
-    if (p.rot === 0) showTutorial('已恢复正方向');
-    else showTutorial(`旋转 ${p.rot}°（需转回 0° 才能吸附）`);
   }
 }
 
@@ -1204,34 +1183,29 @@ function beginPan(e) {
 /* ══════════════════════════════════════════════
    提交校验
    ══════════════════════════════════════════════ */
-function submitPuzzle() {
-  if (!state.img) { toast('先上传一张图片吧'); return; }
-
-  const rotated = state.pieces.filter(p => ((p.rot % 360) + 360) % 360 !== 0);
-  if (rotated.length > 0) {
-    toast(`有 ${rotated.length} 块方向不对，双击旋转到正方向`);
-    return;
-  }
+function puzzleSolved() {
+  if (!state.img || !state.pieces.length) return false;
+  if (state.pieces.some(p => ((p.rot % 360) + 360) % 360 !== 0)) return false;
 
   const grid = new Map();
   for (const p of state.pieces) grid.set(p.row * 1000 + p.col, p);
 
   const TOL = Math.max(2, Math.min(state.pw, state.ph) * 0.14);
-  let bad = 0;
-
   for (const p of state.pieces) {
     if (p.col < state.cols - 1) {
       const q = grid.get(p.row * 1000 + p.col + 1);
-      if (Math.abs(q.x - p.x - state.pw) > TOL || Math.abs(q.y - p.y) > TOL) bad++;
+      if (!q || Math.abs(q.x - p.x - state.pw) > TOL || Math.abs(q.y - p.y) > TOL) return false;
     }
     if (p.row < state.rows - 1) {
       const q = grid.get((p.row + 1) * 1000 + p.col);
-      if (Math.abs(q.y - p.y - state.ph) > TOL || Math.abs(q.x - p.x) > TOL) bad++;
+      if (!q || Math.abs(q.y - p.y - state.ph) > TOL || Math.abs(q.x - p.x) > TOL) return false;
     }
   }
+  return true;
+}
 
-  if (bad > 0) { toast(`还差一点点～有 ${bad} 处接缝没对齐`); return; }
-
+function finishPuzzle() {
+  if ($('winOverlay').classList.contains('show')) return;
   stopTimer();
   const lv = LEVELS[state.level - 1];
   $('winTime').textContent = fmtTime(state.elapsed);
@@ -1311,7 +1285,6 @@ $('btnRecut').addEventListener('click', () => {
   startNewGame();
   $('winOverlay').classList.remove('show');
 });
-$('btnSubmit').addEventListener('click', submitPuzzle);
 $('btnWinClose').addEventListener('click', () => $('winOverlay').classList.remove('show'));
 $('btnWinAgain').addEventListener('click', () => {
   $('winOverlay').classList.remove('show');
@@ -1348,7 +1321,6 @@ window.addEventListener('resize', debounce(() => { if (state.img) fitView(); }, 
 state.level = +levelRange.value;
 state.randomRot = rotRandom.checked;
 updateLevelLabel();
-updateModeBtn();
 applyView();
 </script>
 </body>
