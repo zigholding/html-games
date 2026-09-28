@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>拼图 · 无限画布</title>
+<title>拼图 · 拼个明白</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden;overscroll-behavior:none}
@@ -49,20 +49,15 @@ body{
   flex-shrink:0;
 }
 #diffbar label{font-size:12px;color:#8b93a7;flex-shrink:0}
-#levelRange{
-  -webkit-appearance:none;appearance:none;flex:1;height:4px;border-radius:2px;
-  background:linear-gradient(90deg,#3b6ef5,#a855f7);outline:none;cursor:pointer;
+#levelStars{display:flex;align-items:center;gap:1px;flex-shrink:0}
+#levelStars .star{
+  appearance:none;background:none;border:0;padding:0 1px;margin:0;
+  font-size:22px;line-height:1;cursor:pointer;color:#3a4254;
+  text-shadow:none;
 }
-#levelRange::-webkit-slider-thumb{
-  -webkit-appearance:none;width:18px;height:18px;border-radius:50%;
-  background:#fff;border:3px solid #3b6ef5;cursor:pointer;
-  box-shadow:0 1px 6px rgba(0,0,0,.5);
-}
-#levelRange::-moz-range-thumb{
-  width:14px;height:14px;border-radius:50%;background:#fff;
-  border:3px solid #3b6ef5;cursor:pointer;
-}
-#levelLabel{font-size:12px;font-weight:600;color:#c9d1e2;white-space:nowrap;min-width:104px;text-align:right}
+#levelStars .star.on{color:#f5c542;text-shadow:0 0 8px rgba(245,197,66,.35)}
+#levelStars .star:hover{transform:scale(1.12)}
+#levelLabel{font-size:12px;font-weight:600;color:#c9d1e2;white-space:nowrap}
 #diffbar .opt{
   display:flex;align-items:center;gap:6px;
   font-size:12px;font-weight:600;color:#c9d1e2;
@@ -191,8 +186,15 @@ body{
 
   <div id="diffbar">
     <label>难度</label>
-    <input type="range" id="levelRange" min="1" max="5" value="1" step="1">
+    <div id="levelStars" role="radiogroup" aria-label="难度">
+      <button type="button" class="star" data-level="1" aria-label="入门">★</button>
+      <button type="button" class="star" data-level="2" aria-label="简单">★</button>
+      <button type="button" class="star" data-level="3" aria-label="中等">★</button>
+      <button type="button" class="star" data-level="4" aria-label="困难">★</button>
+      <button type="button" class="star" data-level="5" aria-label="专家">★</button>
+    </div>
     <span id="levelLabel">入门 · 12 块</span>
+    <div class="spacer"></div>
     <label class="opt" title="新开局时每块随机旋转 0° / 90° / 180° / 270°">
       <input type="checkbox" id="rotRandom">随机旋转
     </label>
@@ -201,7 +203,7 @@ body{
   <div id="stage">
     <div id="world"></div>
 
-    <button class="btn" id="refToggle">👁 原图</button>
+    <button class="btn" id="refToggle">👁</button>
     <div id="refPanel">
       <img id="refImg" alt="原图">
     </div>
@@ -290,7 +292,7 @@ const emptyHint  = $('emptyHint');
 const fileInput  = $('fileInput');
 const timerEl    = $('timerEl');
 const countEl    = $('countEl');
-const levelRange = $('levelRange');
+const levelStars = $('levelStars');
 const levelLabel = $('levelLabel');
 const rotRandom  = $('rotRandom');
 const tutorialEl = $('tutorial');
@@ -756,6 +758,9 @@ function updateLevelLabel() {
     txt = `${lv.name} · ${g.n}块 (${g.C}×${g.R})`;
   }
   levelLabel.textContent = txt;
+  for (const btn of levelStars.querySelectorAll('.star')) {
+    btn.classList.toggle('on', +btn.dataset.level <= state.level);
+  }
 }
 
 /* ══════════════════════════════════════════════
@@ -1295,20 +1300,18 @@ const refToggle = $('refToggle');
 const refPanel = $('refPanel');
 refToggle.addEventListener('click', () => {
   const show = refPanel.classList.toggle('show');
-  refToggle.textContent = show ? '🙈 隐藏' : '👁 原图';
+  refToggle.textContent = show ? '🙈' : '👁';
 });
 
 rotRandom.addEventListener('change', () => {
   state.randomRot = rotRandom.checked;
 });
 
-levelRange.addEventListener('input', () => {
-  state.level = +levelRange.value;
-  updateLevelLabel();
-});
 const applyLevel = debounce(() => { if (state.img) startNewGame(); }, 320);
-levelRange.addEventListener('change', () => {
-  state.level = +levelRange.value;
+levelStars.addEventListener('click', e => {
+  const btn = e.target.closest('.star');
+  if (!btn) return;
+  state.level = +btn.dataset.level;
   updateLevelLabel();
   applyLevel();
 });
@@ -1318,7 +1321,7 @@ window.addEventListener('resize', debounce(() => { if (state.img) fitView(); }, 
 /* ══════════════════════════════════════════════
    初始化
    ══════════════════════════════════════════════ */
-state.level = +levelRange.value;
+state.level = 1;
 state.randomRot = rotRandom.checked;
 updateLevelLabel();
 applyView();
