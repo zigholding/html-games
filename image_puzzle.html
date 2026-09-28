@@ -280,6 +280,7 @@ const state = {
   started: false,
   mode: 'group', // 'group' | 'separate'
   randomRot: false,
+  sessionImg: null,
 };
 
 const view = { x: 0, y: 0, k: 1 };
@@ -653,6 +654,7 @@ function fitView() {
   view.x = cx - (state.boardW / 2) * view.k;
   view.y = cy - (state.boardH / 2) * view.k;
   applyView();
+  scheduleSave();
 }
 
 /* ══════════════════════════════════════════════
@@ -692,29 +694,34 @@ function applyInitialRotation() {
 /* ══════════════════════════════════════════════
    构建所有块
    ══════════════════════════════════════════════ */
-function buildAllPieces() {
+function clearWorld() {
   worldEl.innerHTML = '';
   state.pieces = [];
-  state.nextGid = 1;
-
   const outline = document.createElement('div');
   outline.id = 'boardOutline';
   outline.style.width  = state.boardW + 'px';
   outline.style.height = state.boardH + 'px';
   worldEl.appendChild(outline);
+}
+
+function addPiece(row, col) {
+  const el = document.createElement('div');
+  el.className = 'piece';
+  el.style.width  = state.cw + 'px';
+  el.style.height = state.ch + 'px';
+  const piece = { row, col, rot: 0, x: 0, y: 0, groupId: 0, el };
+  el._piece = piece;
+  worldEl.appendChild(el);
+  state.pieces.push(piece);
+  return piece;
+}
+
+function buildAllPieces() {
+  clearWorld();
+  state.nextGid = 1;
 
   for (let r = 0; r < state.rows; r++) {
-    for (let c = 0; c < state.cols; c++) {
-      const el = document.createElement('div');
-      el.className = 'piece';
-      el.style.width  = state.cw + 'px';
-      el.style.height = state.ch + 'px';
-
-      const piece = { row: r, col: c, rot: 0, x: 0, y: 0, groupId: 0, el };
-      el._piece = piece;
-      worldEl.appendChild(el);
-      state.pieces.push(piece);
-    }
+    for (let c = 0; c < state.cols; c++) addPiece(r, c);
   }
 
   for (const p of state.pieces) p.groupId = state.nextGid++;
@@ -792,6 +799,175 @@ function stopTimer() {
 }
 
 /* ══════════════════════════════════════════════
+   本地缓存
+   图片和碎片位置远超 cookie 约 4KB 的上限，而且直接打开本地文件时
+   cookie 经常存不住。整局记在 localStorage，刷新后恢复。
+   ══════════════════════════════════════════════ */
+const SAVE_KEY = 'puzzle-session';
+let saveTimer = null;
+let saveFailed = false;
+
+function currentElapsed() {
+  if (!state.running) return state.elapsed;
+  return Date.now() - state.startTime;
+}
+
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveSession, 300);
+}
+
+function saveSession() {
+  const data = {
+    v: 1,
+    level: state.level,
+    randomRot: state.randomRot,
+  };
+
+  if (state.img && state.pieces.length) {
+    if (!state.sessionImg) state.sessionImg = state.img.toDataURL('image/jpeg', 0.82);
+    data.img = state.sessionImg;
+    data.imgW = state.imgW;
+    data.imgH = state.imgH;
+    data.cols = state.cols;
+    data.rows = state.rows;
+    data.total = state.total;
+    data.boardW = state.boardW;
+    data.boardH = state.boardH;
+    data.pw = state.pw;
+    data.ph = state.ph;
+    data.MX = state.MX;
+    data.MY = state.MY;
+    data.cw = state.cw;
+    data.ch = state.ch;
+    data.hTabs = state.hTabs;
+    data.vTabs = state.vTabs;
+    data.nextGid = state.nextGid;
+    data.elapsed = currentElapsed();
+    data.running = state.running;
+    data.started = state.started;
+    data.won = $('winOverlay').classList.contains('show');
+    data.view = { x: view.x, y: view.y, k: view.k };
+    data.pieces = state.pieces.map(p => ({
+      r: p.row, c: p.col, rot: p.rot,
+      x: Math.round(p.x * 10) / 10,
+      y: Math.round(p.y * 10) / 10,
+      g: p.groupId,
+    }));
+  }
+
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+  } catch (_) {
+    if (!saveFailed) {
+      saveFailed = true;
+      toast('局面太大，这次没能记住');
+    }
+  }
+}
+
+function readSession() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || data.v !== 1) return null;
+    return data;
+  } catch (_) {
+    return null;
+  }
+}
+
+function sessionBoardOk(data) {
+  return !!(data.img && data.rows > 0 && data.cols > 0
+    && Array.isArray(data.pieces) && data.pieces.length === data.rows * data.cols
+    && Array.isArray(data.hTabs) && Array.isArray(data.vTabs));
+}
+
+function applySessionPrefs(data) {
+  const level = +data.level;
+  if (level >= 1 && level <= LEVELS.length) state.level = level;
+  state.randomRot = !!data.randomRot;
+  rotRandom.checked = state.randomRot;
+  updateLevelLabel();
+}
+
+function showSavedWin() {
+  const lv = LEVELS[state.level - 1];
+  $('winTime').textContent = fmtTime(state.elapsed);
+  $('winInfo').textContent =
+    `${lv.name}难度 · ${state.cols}×${state.rows} · 共 ${state.total} 块`;
+  $('winOverlay').classList.add('show');
+}
+
+function restoreBoard(data) {
+  const img = new Image();
+  img.onload = () => {
+    const cv = document.createElement('canvas');
+    cv.width = data.imgW;
+    cv.height = data.imgH;
+    cv.getContext('2d').drawImage(img, 0, 0, data.imgW, data.imgH);
+
+    state.img = cv;
+    state.sessionImg = data.img;
+    state.imgW = data.imgW;
+    state.imgH = data.imgH;
+    state.cols = data.cols;
+    state.rows = data.rows;
+    state.total = data.total;
+    state.boardW = data.boardW;
+    state.boardH = data.boardH;
+    state.pw = data.pw;
+    state.ph = data.ph;
+    state.MX = data.MX;
+    state.MY = data.MY;
+    state.cw = data.cw;
+    state.ch = data.ch;
+    state.hTabs = data.hTabs;
+    state.vTabs = data.vTabs;
+    state.nextGid = data.nextGid || 1;
+
+    clearWorld();
+    for (const s of data.pieces) {
+      const p = addPiece(s.r, s.c);
+      p.rot = s.rot || 0;
+      p.groupId = s.g;
+      p.el.style.transform = p.rot ? `rotate(${p.rot}deg)` : '';
+      setPiecePos(p, s.x, s.y);
+    }
+    renderAllPieces();
+
+    state.elapsed = data.elapsed || 0;
+    state.running = false;
+    state.started = !!data.started;
+    timerEl.textContent = fmtTime(state.elapsed);
+    if (data.running && !data.won) startTimer();
+
+    updateHUD();
+    updateLevelLabel();
+    $('refImg').src = data.img;
+    emptyHint.classList.add('hidden');
+    $('btnShuffle').disabled = false;
+    $('btnRecut').disabled = false;
+
+    if (data.view && data.view.k) {
+      view.x = data.view.x;
+      view.y = data.view.y;
+      view.k = data.view.k;
+      applyView();
+    } else {
+      fitView();
+    }
+
+    if (data.won) showSavedWin();
+  };
+  img.onerror = () => {
+    try { localStorage.removeItem(SAVE_KEY); } catch (_) {}
+  };
+  img.src = data.img;
+}
+
+/* ══════════════════════════════════════════════
    新游戏
    ══════════════════════════════════════════════ */
 function startNewGame() {
@@ -833,7 +1009,8 @@ function startNewGame() {
   updateHUD();
   updateLevelLabel();
 
-  $('refImg').src = state.img.toDataURL('image/jpeg', 0.85);
+  if (!state.sessionImg) state.sessionImg = state.img.toDataURL('image/jpeg', 0.82);
+  $('refImg').src = state.sessionImg;
 
   emptyHint.classList.add('hidden');
   $('btnShuffle').disabled = false;
@@ -1048,6 +1225,7 @@ function stageUp(e) {
       moved: false,
     };
   }
+  scheduleSave();
 }
 stage.addEventListener('pointerup', stageUp);
 stage.addEventListener('pointercancel', stageUp);
@@ -1067,6 +1245,7 @@ stage.addEventListener('wheel', e => {
   view.y = cy - (cy - view.y) * ratio;
   view.k = newK;
   applyView();
+  scheduleSave();
 }, { passive: false });
 
 /* ══════════════════════════════════════════════
@@ -1170,6 +1349,7 @@ function endWorldDrag() {
   }
 
   wDrag = null;
+  scheduleSave();
 }
 
 function beginPan(e) {
@@ -1217,6 +1397,7 @@ function finishPuzzle() {
   $('winInfo').textContent =
     `${lv.name}难度 · ${state.cols}×${state.rows} · 共 ${state.total} 块`;
   $('winOverlay').classList.add('show');
+  scheduleSave();
 }
 
 /* ══════════════════════════════════════════════
@@ -1243,6 +1424,7 @@ function loadFile(file) {
     state.img = cv;
     state.imgW = w;
     state.imgH = h;
+    state.sessionImg = cv.toDataURL('image/jpeg', 0.82);
 
     startNewGame();
   };
@@ -1305,6 +1487,7 @@ refToggle.addEventListener('click', () => {
 
 rotRandom.addEventListener('change', () => {
   state.randomRot = rotRandom.checked;
+  scheduleSave();
 });
 
 const applyLevel = debounce(() => { if (state.img) startNewGame(); }, 320);
@@ -1314,6 +1497,7 @@ levelStars.addEventListener('click', e => {
   state.level = +btn.dataset.level;
   updateLevelLabel();
   applyLevel();
+  if (!state.img) scheduleSave();
 });
 
 window.addEventListener('resize', debounce(() => { if (state.img) fitView(); }, 220));
@@ -1321,10 +1505,17 @@ window.addEventListener('resize', debounce(() => { if (state.img) fitView(); }, 
 /* ══════════════════════════════════════════════
    初始化
    ══════════════════════════════════════════════ */
-state.level = 1;
-state.randomRot = rotRandom.checked;
+const saved = readSession();
+if (saved) applySessionPrefs(saved);
+else state.randomRot = rotRandom.checked;
+if (!saved) state.level = 1;
 updateLevelLabel();
 applyView();
+if (saved && sessionBoardOk(saved)) restoreBoard(saved);
+
+setInterval(() => { if (state.running) saveSession(); }, 5000);
+window.addEventListener('beforeunload', saveSession);
+window.addEventListener('pagehide', saveSession);
 </script>
 </body>
 </html>
