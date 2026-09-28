@@ -156,9 +156,14 @@ body{
 #winOverlay.show{display:flex;animation:fadeIn .28s}
 #winCard{
   background:#1b1f2a;border:1px solid #2e3546;border-radius:20px;
-  padding:32px 40px;text-align:center;
+  padding:28px 28px 24px;text-align:center;
   box-shadow:0 24px 60px rgba(0,0,0,.65);
   animation:popIn .4s cubic-bezier(.2,1.4,.5,1);
+  max-width:min(92vw,520px);max-height:calc(100vh - 32px);overflow:auto;
+}
+#winImg{
+  display:block;width:auto;max-width:min(78vw,440px);max-height:min(46vh,360px);
+  margin:12px auto 4px;border-radius:12px;object-fit:contain;background:#10141c;
 }
 @keyframes popIn{from{transform:scale(.86);opacity:0}to{transform:scale(1);opacity:1}}
 #winCard h2{font-size:22px;margin-bottom:4px;color:#fff}
@@ -225,6 +230,7 @@ body{
 <div id="winOverlay">
   <div id="winCard">
     <h2>🎉 拼图完成！</h2>
+    <img id="winImg" alt="完成的拼图">
     <div class="time" id="winTime">00:00</div>
     <p id="winInfo"></p>
     <div class="row">
@@ -905,11 +911,17 @@ function applySessionPrefs(data) {
   updateLevelLabel();
 }
 
+function showWinImage() {
+  const src = state.sessionImg || (state.img && state.img.toDataURL('image/jpeg', 0.82));
+  if (src) $('winImg').src = src;
+}
+
 function showSavedWin() {
   const lv = LEVELS[state.level - 1];
   $('winTime').textContent = fmtTime(state.elapsed);
   $('winInfo').textContent =
     `${lv.name}难度 · ${state.cols}×${state.rows} · 共 ${state.total} 块`;
+  showWinImage();
   $('winOverlay').classList.add('show');
 }
 
@@ -1409,6 +1421,7 @@ function finishPuzzle() {
   $('winTime').textContent = fmtTime(state.elapsed);
   $('winInfo').textContent =
     `${lv.name}难度 · ${state.cols}×${state.rows} · 共 ${state.total} 块`;
+  showWinImage();
   $('winOverlay').classList.add('show');
   playApplause();
   scheduleSave();
