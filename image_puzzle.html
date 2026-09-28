@@ -1,0 +1,1355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>拼图 · 无限画布</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+body{
+  font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  background:#0e1015;color:#e8eaf0;
+  user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;
+  -webkit-touch-callout:none;
+}
+#app{display:flex;flex-direction:column;height:100vh;height:100dvh}
+
+/* ── 顶栏 ── */
+#topbar{
+  display:flex;align-items:center;gap:6px;
+  padding:7px 10px;background:#171a22;border-bottom:1px solid #262b38;
+  flex-shrink:0;overflow-x:auto;scrollbar-width:none;
+}
+#topbar::-webkit-scrollbar{display:none}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:4px;
+  padding:7px 12px;border-radius:9px;border:1px solid #333a4a;
+  background:#222734;color:#dfe3ec;font-size:13px;font-weight:500;
+  cursor:pointer;white-space:nowrap;transition:.15s;flex-shrink:0;
+}
+.btn:hover{background:#2b3242;border-color:#414a5e}
+.btn:active{transform:scale(.95)}
+.btn.primary{background:#3b6ef5;border-color:#3b6ef5;color:#fff}
+.btn.primary:hover{background:#4d7cff}
+.btn.success{background:#1f9d55;border-color:#1f9d55;color:#fff}
+.btn.success:hover{background:#25b463}
+.btn.mode{background:#2a3350;border-color:#3f4c78;color:#cfd9f5}
+.btn.mode.active{background:#b8760d;border-color:#e29010;color:#fff}
+.btn:disabled{opacity:.35;pointer-events:none}
+
+.stat{
+  display:flex;flex-direction:column;align-items:center;
+  padding:2px 9px;border-left:1px solid #262b38;flex-shrink:0;
+}
+.stat .k{font-size:9px;color:#6b7386;letter-spacing:.4px}
+.stat .v{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.spacer{flex:1;min-width:4px}
+
+/* ── 难度条 ── */
+#diffbar{
+  display:flex;align-items:center;gap:9px;
+  padding:7px 14px;background:#14171e;border-bottom:1px solid #222734;
+  flex-shrink:0;
+}
+#diffbar label{font-size:12px;color:#8b93a7;flex-shrink:0}
+#levelRange{
+  -webkit-appearance:none;appearance:none;flex:1;height:4px;border-radius:2px;
+  background:linear-gradient(90deg,#3b6ef5,#a855f7);outline:none;cursor:pointer;
+}
+#levelRange::-webkit-slider-thumb{
+  -webkit-appearance:none;width:18px;height:18px;border-radius:50%;
+  background:#fff;border:3px solid #3b6ef5;cursor:pointer;
+  box-shadow:0 1px 6px rgba(0,0,0,.5);
+}
+#levelRange::-moz-range-thumb{
+  width:14px;height:14px;border-radius:50%;background:#fff;
+  border:3px solid #3b6ef5;cursor:pointer;
+}
+#levelLabel{font-size:12px;font-weight:600;color:#c9d1e2;white-space:nowrap;min-width:104px;text-align:right}
+#diffbar .opt{
+  display:flex;align-items:center;gap:6px;
+  font-size:12px;font-weight:600;color:#c9d1e2;
+  cursor:pointer;flex-shrink:0;white-space:nowrap;
+}
+#diffbar .opt input{width:15px;height:15px;accent-color:#3b6ef5;cursor:pointer}
+
+/* ── 舞台 ── */
+#stage{
+  flex:1;position:relative;overflow:hidden;touch-action:none;
+  background:#0b0d12;min-height:0;cursor:grab;
+}
+#stage.panning{cursor:grabbing}
+#stage::before{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background-image:radial-gradient(circle,#1a1f2b 1px,transparent 1px);
+  background-size:22px 22px;
+}
+#world{
+  position:absolute;left:0;top:0;width:0;height:0;
+  transform-origin:0 0;will-change:transform;
+}
+#boardOutline{
+  position:absolute;left:0;top:0;
+  border:2px dashed rgba(90,140,220,.35);
+  border-radius:5px;pointer-events:none;z-index:0;
+}
+#emptyHint{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:14px;color:#4d566b;
+  font-size:15px;pointer-events:none;text-align:center;padding:20px;
+  z-index:5;
+}
+#emptyHint .big{font-size:44px;opacity:.4}
+#emptyHint.hidden{display:none}
+
+/* ── 原图开关 ── */
+#refToggle{
+  position:absolute;top:12px;right:12px;z-index:50;
+  padding:6px 12px;font-size:12px;
+}
+#refPanel{
+  position:absolute;top:50px;right:12px;z-index:50;
+  background:#1a1f2a;border:1px solid #3a4257;border-radius:10px;
+  padding:8px;box-shadow:0 10px 30px rgba(0,0,0,.55);
+  display:none;max-width:min(38vw,320px);
+  animation:fadeIn .18s;
+}
+#refPanel.show{display:block}
+#refPanel img{
+  display:block;max-width:100%;max-height:min(38vh,320px);
+  border-radius:6px;pointer-events:none;
+}
+#refPanel .cap{
+  font-size:10.5px;color:#6b7386;margin-top:6px;text-align:center;
+}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+
+/* ── 拼图块 ── */
+.piece{
+  position:absolute;transform-origin:50% 50%;
+  touch-action:none;cursor:grab;
+  filter:drop-shadow(0 2px 3px rgba(0,0,0,.5));
+}
+.piece canvas{display:block;width:100%;height:100%}
+.piece:hover{filter:drop-shadow(0 0 7px rgba(90,150,255,.75))}
+.piece.active{
+  cursor:grabbing;z-index:9000;
+  filter:drop-shadow(0 8px 18px rgba(0,0,0,.75));
+}
+
+/* ── 提示 ── */
+#toast{
+  position:fixed;left:50%;bottom:40px;
+  transform:translateX(-50%) translateY(20px);
+  background:rgba(30,35,48,.96);border:1px solid #3a4257;color:#e8eaf0;
+  padding:11px 20px;border-radius:12px;font-size:13.5px;
+  opacity:0;pointer-events:none;transition:.25s;
+  z-index:200000;max-width:82vw;text-align:center;
+  box-shadow:0 8px 28px rgba(0,0,0,.6);
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+#tutorial{
+  position:absolute;left:50%;top:14px;transform:translateX(-50%);
+  background:rgba(30,36,50,.92);border:1px solid #3a4257;
+  padding:8px 16px;border-radius:10px;font-size:12px;color:#9aa5bd;
+  pointer-events:none;opacity:0;transition:.3s;white-space:nowrap;
+  max-width:92vw;overflow:hidden;text-overflow:ellipsis;z-index:6;
+}
+#tutorial.show{opacity:1}
+
+/* ── 胜利弹层 ── */
+#winOverlay{
+  position:fixed;inset:0;background:rgba(8,10,15,.87);
+  display:none;align-items:center;justify-content:center;z-index:100000;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+}
+#winOverlay.show{display:flex;animation:fadeIn .28s}
+#winCard{
+  background:#1b1f2a;border:1px solid #2e3546;border-radius:20px;
+  padding:32px 40px;text-align:center;
+  box-shadow:0 24px 60px rgba(0,0,0,.65);
+  animation:popIn .4s cubic-bezier(.2,1.4,.5,1);
+}
+@keyframes popIn{from{transform:scale(.86);opacity:0}to{transform:scale(1);opacity:1}}
+#winCard h2{font-size:22px;margin-bottom:4px;color:#fff}
+#winCard .time{
+  font-size:40px;font-weight:700;color:#5b8cff;
+  font-variant-numeric:tabular-nums;margin:12px 0;
+}
+#winCard p{font-size:13px;color:#8b93a7;margin-bottom:18px}
+#winCard .row{display:flex;gap:10px;justify-content:center}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="topbar">
+    <input type="file" id="fileInput" accept="image/*" hidden>
+    <button class="btn primary" id="btnUpload">📷 图片</button>
+    <button class="btn mode" id="btnMode" disabled>🔗 分组</button>
+    <div class="stat"><span class="k">时间</span><span class="v" id="timerEl">00:00</span></div>
+    <div class="stat"><span class="k">块数</span><span class="v" id="countEl">0</span></div>
+    <div class="spacer"></div>
+    <button class="btn" id="btnFit" title="复位视图">⤢</button>
+    <button class="btn" id="btnShuffle" disabled>🔀</button>
+    <button class="btn" id="btnRecut" disabled>✂️</button>
+    <button class="btn success" id="btnSubmit" disabled>✓ 提交</button>
+  </div>
+
+  <div id="diffbar">
+    <label>难度</label>
+    <input type="range" id="levelRange" min="1" max="5" value="1" step="1">
+    <span id="levelLabel">入门 · 12 块</span>
+    <label class="opt" title="新开局时每块随机旋转 0° / 90° / 180° / 270°">
+      <input type="checkbox" id="rotRandom">随机旋转
+    </label>
+  </div>
+
+  <div id="stage">
+    <div id="world"></div>
+
+    <button class="btn" id="refToggle">👁 原图</button>
+    <div id="refPanel">
+      <img id="refImg" alt="原图">
+      <div class="cap">拖动空白处平移 · 双指缩放</div>
+    </div>
+
+    <div id="tutorial"></div>
+    <div id="emptyHint">
+      <div class="big">🧩</div>
+      <div>上传一张照片开始拼图</div>
+      <div style="font-size:12px;color:#394154;margin-top:6px">
+        拖动拼图块到相邻位置会自动吸附 · 双击旋转 90°
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<div id="winOverlay">
+  <div id="winCard">
+    <h2>🎉 拼图完成！</h2>
+    <div class="time" id="winTime">00:00</div>
+    <p id="winInfo"></p>
+    <div class="row">
+      <button class="btn primary" id="btnWinAgain">再来一局</button>
+      <button class="btn" id="btnWinClose">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ══════════════════════════════════════════════
+   常量
+   ══════════════════════════════════════════════ */
+const LEVELS = [
+  { name: '入门', target: 12  },
+  { name: '简单', target: 30  },
+  { name: '中等', target: 70  },
+  { name: '困难', target: 150 },
+  { name: '专家', target: 300 },
+];
+
+const TAB_PTS = [
+  [0.00, 0.00],
+  [0.36, 0.00],
+  [0.42, 0.28],
+  [0.35, 0.58],
+  [0.50, 0.95],
+  [0.65, 0.58],
+  [0.58, 0.28],
+  [0.64, 0.00],
+  [1.00, 0.00],
+];
+
+const BOARD_LONG   = 1200;
+const MAX_IMG      = 1500;
+const TAP_SLOP     = 10;
+
+/* ══════════════════════════════════════════════
+   状态
+   ══════════════════════════════════════════════ */
+const state = {
+  img: null, imgW: 0, imgH: 0,
+  level: 1,
+  cols: 0, rows: 0, total: 0,
+  boardW: 0, boardH: 0,
+  pw: 0, ph: 0, MX: 0, MY: 0, cw: 0, ch: 0,
+  hTabs: [], vTabs: [],
+  pieces: [],
+  nextGid: 1,
+  running: false, startTime: 0, elapsed: 0, timerId: null,
+  started: false,
+  mode: 'group', // 'group' | 'separate'
+  randomRot: false,
+};
+
+const view = { x: 0, y: 0, k: 1 };
+
+/* DOM */
+const $ = id => document.getElementById(id);
+const stage      = $('stage');
+const worldEl    = $('world');
+const emptyHint  = $('emptyHint');
+const fileInput  = $('fileInput');
+const timerEl    = $('timerEl');
+const countEl    = $('countEl');
+const levelRange = $('levelRange');
+const levelLabel = $('levelLabel');
+const rotRandom  = $('rotRandom');
+const tutorialEl = $('tutorial');
+const btnMode    = $('btnMode');
+
+/* ══════════════════════════════════════════════
+   小工具
+   ══════════════════════════════════════════════ */
+function shuffleArr(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = (Math.random() * (i + 1)) | 0;
+    const t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a;
+}
+function fmtTime(ms) {
+  const s = Math.floor(ms / 1000);
+  return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+}
+function debounce(fn, wait) {
+  let t;
+  return function (...a) {
+    clearTimeout(t);
+    t = setTimeout(() => fn.apply(this, a), wait);
+  };
+}
+let toastTimer;
+function toast(msg) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+let tutTimer;
+function showTutorial(msg) {
+  tutorialEl.textContent = msg;
+  tutorialEl.classList.add('show');
+  clearTimeout(tutTimer);
+  tutTimer = setTimeout(() => tutorialEl.classList.remove('show'), 2600);
+}
+
+/* 组颜色（黄金角分布，相邻 id 差异大） */
+function groupColor(gid) {
+  const hue = (gid * 137.508) % 360;
+  return `hsl(${hue.toFixed(1)}, 78%, 60%)`;
+}
+
+/* ══════════════════════════════════════════════
+   坐标换算
+   ══════════════════════════════════════════════ */
+function screenToWorld(cx, cy) {
+  const r = stage.getBoundingClientRect();
+  return {
+    x: (cx - r.left - view.x) / view.k,
+    y: (cy - r.top  - view.y) / view.k,
+  };
+}
+function applyView() {
+  worldEl.style.transform =
+    `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.k})`;
+}
+
+/* ══════════════════════════════════════════════
+   网格选择
+   ══════════════════════════════════════════════ */
+function pickGrid(W, H, target) {
+  let best = null;
+  for (let C = 2; C <= 40; C++) {
+    for (let R = 2; R <= 40; R++) {
+      const n = C * R;
+      if (n > 400 || n < 4) continue;
+      const cellW = W / C, cellH = H / R;
+      const aspectPen = Math.abs(Math.log(cellW / cellH)) * 1.2;
+      const countPen  = Math.abs(n - target) / target;
+      const score = countPen + aspectPen;
+      if (!best || score < best.score) best = { C, R, n, score };
+    }
+  }
+  return best || { C: 3, R: 2, n: 6 };
+}
+
+/* ══════════════════════════════════════════════
+   凹凸边生成
+   ══════════════════════════════════════════════ */
+function generateTabs() {
+  const { rows, cols } = state;
+  state.hTabs = [];
+  for (let r = 0; r <= rows; r++) {
+    const row = [];
+    for (let c = 0; c < cols; c++) {
+      row.push((r === 0 || r === rows) ? 0 : (Math.random() < 0.5 ? -1 : 1));
+    }
+    state.hTabs.push(row);
+  }
+  state.vTabs = [];
+  for (let r = 0; r < rows; r++) {
+    const row = [];
+    for (let c = 0; c <= cols; c++) {
+      row.push((c === 0 || c === cols) ? 0 : (Math.random() < 0.5 ? -1 : 1));
+    }
+    state.vTabs.push(row);
+  }
+}
+
+/* ══════════════════════════════════════════════
+   画边
+   ══════════════════════════════════════════════ */
+function edgeTo(path, x0, y0, x1, y1, bulge, amp) {
+  const dx = x1 - x0, dy = y1 - y0;
+  const len = Math.hypot(dx, dy);
+  if (!bulge || len < 1) { path.lineTo(x1, y1); return; }
+
+  const ux = dx / len, uy = dy / len;
+  const nx = uy, ny = -ux;
+
+  const pts = TAB_PTS.map(([t, o]) => [
+    x0 + ux * len * t + nx * amp * o * bulge,
+    y0 + uy * len * t + ny * amp * o * bulge,
+  ]);
+
+  path.lineTo(pts[1][0], pts[1][1]);
+  for (let i = 1; i <= 6; i++) {
+    const p0 = pts[i - 1], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    path.bezierCurveTo(
+      p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6,
+      p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6,
+      p2[0], p2[1]
+    );
+  }
+  path.lineTo(x1, y1);
+}
+
+/* ══════════════════════════════════════════════
+   构建块路径（返回整体路径 + 4 条单边路径）
+   ══════════════════════════════════════════════ */
+function buildPieceEdges(row, col) {
+  const { pw, ph, MX, MY, hTabs, vTabs } = state;
+  const L = MX, T = MY, R = MX + pw, B = MY + ph;
+  const amp = 0.30 * Math.min(pw, ph);
+
+  const full = new Path2D();
+  full.moveTo(L, T);
+
+  const top = new Path2D();    top.moveTo(L, T);
+  const right = new Path2D();  right.moveTo(R, T);
+  const bottom = new Path2D(); bottom.moveTo(R, B);
+  const left = new Path2D();   left.moveTo(L, B);
+
+  {
+    const t = hTabs[row][col];
+    const b = t === 0 ? 0 : (t === -1 ? 1 : -1);
+    edgeTo(full, L, T, R, T, b, amp);
+    edgeTo(top,  L, T, R, T, b, amp);
+  }
+  {
+    const t = vTabs[row][col + 1];
+    const b = t === 0 ? 0 : (t === 1 ? 1 : -1);
+    edgeTo(full, R, T, R, B, b, amp);
+    edgeTo(right, R, T, R, B, b, amp);
+  }
+  {
+    const t = hTabs[row + 1][col];
+    const b = t === 0 ? 0 : (t === 1 ? 1 : -1);
+    edgeTo(full, R, B, L, B, b, amp);
+    edgeTo(bottom, R, B, L, B, b, amp);
+  }
+  {
+    const t = vTabs[row][col];
+    const b = t === 0 ? 0 : (t === -1 ? 1 : -1);
+    edgeTo(full, L, B, L, T, b, amp);
+    edgeTo(left,  L, B, L, T, b, amp);
+  }
+
+  full.closePath();
+  return { full, top, right, bottom, left };
+}
+
+/* ══════════════════════════════════════════════
+   drawImage 越界裁剪辅助
+   ══════════════════════════════════════════════ */
+function drawImageRegion(ctx, img, sx, sy, sw, sh, dx, dy, dw, dh, imgW, imgH) {
+  if (sw <= 0 || sh <= 0) return;
+
+  if (sx < 0) {
+    const k = -sx / sw;
+    sx = 0; sw -= -sx * 0 + sw * k; // 保持公式清晰：sw *= (1-k)
+    sw = (sh !== 0) ? sw : sw;      // 无意义占位
+  }
+  // 上面写法太绕，直接重写：
+  sx = +sx; sy = +sy; sw = +sw; sh = +sh;
+
+  if (sx < 0) {
+    const cut = -sx;
+    const k = cut / sw;
+    sx = 0;
+    sw -= cut;
+    dx += dw * k;
+    dw -= dw * k;
+  }
+  if (sy < 0) {
+    const cut = -sy;
+    const k = cut / sh;
+    sy = 0;
+    sh -= cut;
+    dy += dh * k;
+    dh -= dh * k;
+  }
+  if (sx + sw > imgW) {
+    const cut = sx + sw - imgW;
+    const k = cut / sw;
+    sw -= cut;
+    dw -= dw * k;
+  }
+  if (sy + sh > imgH) {
+    const cut = sy + sh - imgH;
+    const k = cut / sh;
+    sh -= cut;
+    dh -= dh * k;
+  }
+  if (sw <= 0.5 || sh <= 0.5 || dw <= 0.5 || dh <= 0.5) return;
+  ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+}
+
+/* ══════════════════════════════════════════════
+   邻居 / 组内边判断
+   ══════════════════════════════════════════════ */
+function findNeighbor(p, dx, dy) {
+  const tx = p.x + dx;
+  const ty = p.y + dy;
+  const TOL = Math.min(state.pw, state.ph) * 0.45;
+  for (const q of state.pieces) {
+    if (q === p) continue;
+    if (q.groupId !== p.groupId) continue;
+    if (Math.abs(q.x - tx) < TOL && Math.abs(q.y - ty) < TOL) return q;
+  }
+  return null;
+}
+
+function isInternalEdge(p, dir) {
+  if (p.rot !== 0) return false;
+  const { pw, ph } = state;
+  if (dir === 'top')    return !!findNeighbor(p, 0, -ph);
+  if (dir === 'bottom') return !!findNeighbor(p, 0,  ph);
+  if (dir === 'left')   return !!findNeighbor(p, -pw, 0);
+  if (dir === 'right')  return !!findNeighbor(p,  pw, 0);
+  return false;
+}
+
+/* ══════════════════════════════════════════════
+   渲染单个块的 canvas
+   ══════════════════════════════════════════════ */
+function makePieceCanvas(p) {
+  const DPR = Math.min(window.devicePixelRatio || 1, 2);
+  const { pw, ph, MX, MY, cw, ch, boardW, imgW, imgH, pieces } = state;
+  const row = p.row, col = p.col;
+
+  const cv = document.createElement('canvas');
+  cv.width  = Math.max(1, Math.round(cw * DPR));
+  cv.height = Math.max(1, Math.round(ch * DPR));
+  cv.style.width  = cw + 'px';
+  cv.style.height = ch + 'px';
+
+  const ctx = cv.getContext('2d');
+  ctx.scale(DPR, DPR);
+
+  const edges = buildPieceEdges(row, col);
+
+  // 整块裁剪 + 绘制（含凸起周围的图片内容）
+  const scale = boardW / imgW;  // 世界 px / 图片 px
+  const sxImg = (col * pw - MX) / scale;
+  const syImg = (row * ph - MY) / scale;
+  const swImg = cw / scale;
+  const shImg = ch / scale;
+
+  ctx.save();
+  ctx.clip(edges.full);
+  drawImageRegion(ctx, state.img, sxImg, syImg, swImg, shImg,
+                  0, 0, cw, ch, imgW, imgH);
+  ctx.restore();
+
+  // 内侧高光（仿倒角）
+  ctx.save();
+  ctx.clip(edges.full);
+  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+  ctx.lineWidth = Math.max(1, Math.min(pw, ph) * 0.035);
+  ctx.lineJoin = 'round';
+  ctx.stroke(edges.full);
+  ctx.restore();
+
+  // 基础深色描边
+  ctx.strokeStyle = 'rgba(0,0,0,0.62)';
+  ctx.lineWidth = Math.max(0.8, Math.min(pw, ph) * 0.022);
+  ctx.lineJoin = 'round';
+  ctx.stroke(edges.full);
+
+  // 判断是否需要画组外轮廓
+  const sameGroupCount = pieces.filter(x => x.groupId === p.groupId).length;
+  const drawGroupOutline = sameGroupCount > 1 && p.rot === 0;
+
+  if (drawGroupOutline) {
+    const color = groupColor(p.groupId);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1.6, Math.min(pw, ph) * 0.035);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+
+    if (!isInternalEdge(p, 'top'))    ctx.stroke(edges.top);
+    if (!isInternalEdge(p, 'right'))  ctx.stroke(edges.right);
+    if (!isInternalEdge(p, 'bottom')) ctx.stroke(edges.bottom);
+    if (!isInternalEdge(p, 'left'))   ctx.stroke(edges.left);
+  }
+
+  return cv;
+}
+
+function renderPieceCanvas(p) {
+  const cv = makePieceCanvas(p);
+  const old = p.el.querySelector('canvas');
+  if (old) p.el.replaceChild(cv, old);
+  else p.el.insertBefore(cv, p.el.firstChild);
+}
+
+function renderAllPieces() {
+  for (const p of state.pieces) renderPieceCanvas(p);
+}
+
+/* 重绘指定块的 canvas（组变化后调用） */
+function refreshGroupVisuals(list) {
+  const set = new Set(list);
+  // 需要重绘的包括：传入的块，以及它们的组内邻居（外轮廓可能变了）
+  const affected = new Set();
+  for (const p of list) {
+    affected.add(p);
+    for (const q of state.pieces) {
+      if (q.groupId === p.groupId) affected.add(q);
+    }
+  }
+  for (const p of affected) renderPieceCanvas(p);
+}
+
+/* ══════════════════════════════════════════════
+   视图适配
+   ══════════════════════════════════════════════ */
+function fitView() {
+  if (!state.boardW) return;
+  const sr = stage.getBoundingClientRect();
+
+  const ex = state.cw * 0.5;
+  const ey = state.ch * 0.5;
+  const fullW = state.boardW + ex * 2;
+  const fullH = state.boardH + ey * 2;
+
+  const k = Math.min(sr.width / fullW, sr.height / fullH) * 0.9;
+  view.k = Math.max(0.04, Math.min(k, 1.6));
+
+  const cx = sr.width  / 2;
+  const cy = sr.height / 2;
+  view.x = cx - (state.boardW / 2) * view.k;
+  view.y = cy - (state.boardH / 2) * view.k;
+  applyView();
+}
+
+/* ══════════════════════════════════════════════
+   位置
+   ══════════════════════════════════════════════ */
+function setPiecePos(p, x, y) {
+  p.x = x;
+  p.y = y;
+  p.el.style.left = (x - state.cw / 2) + 'px';
+  p.el.style.top  = (y - state.ch / 2) + 'px';
+}
+
+/* ══════════════════════════════════════════════
+   随机散布
+   ══════════════════════════════════════════════ */
+function scatterPieces() {
+  const { boardW, boardH, pw, ph } = state;
+  const ex = Math.max(pw * 0.8, boardW * 0.25);
+  const ey = Math.max(ph * 0.8, boardH * 0.25);
+  const x0 = -ex, y0 = -ey;
+  const x1 = boardW + ex, y1 = boardH + ey;
+
+  const order = shuffleArr(state.pieces.slice());
+  for (const p of order) {
+    setPiecePos(p, x0 + Math.random() * (x1 - x0), y0 + Math.random() * (y1 - y0));
+  }
+}
+
+function applyInitialRotation() {
+  for (const p of state.pieces) {
+    const rot = state.randomRot ? ((Math.random() * 4) | 0) * 90 : 0;
+    p.rot = rot;
+    p.el.style.transform = rot ? `rotate(${rot}deg)` : '';
+  }
+}
+
+/* ══════════════════════════════════════════════
+   构建所有块
+   ══════════════════════════════════════════════ */
+function buildAllPieces() {
+  worldEl.innerHTML = '';
+  state.pieces = [];
+  state.nextGid = 1;
+
+  const outline = document.createElement('div');
+  outline.id = 'boardOutline';
+  outline.style.width  = state.boardW + 'px';
+  outline.style.height = state.boardH + 'px';
+  worldEl.appendChild(outline);
+
+  for (let r = 0; r < state.rows; r++) {
+    for (let c = 0; c < state.cols; c++) {
+      const el = document.createElement('div');
+      el.className = 'piece';
+      el.style.width  = state.cw + 'px';
+      el.style.height = state.ch + 'px';
+
+      const piece = { row: r, col: c, rot: 0, x: 0, y: 0, groupId: 0, el };
+      el._piece = piece;
+      worldEl.appendChild(el);
+      state.pieces.push(piece);
+    }
+  }
+
+  for (const p of state.pieces) p.groupId = state.nextGid++;
+}
+
+/* ══════════════════════════════════════════════
+   组
+   ══════════════════════════════════════════════ */
+function groupOf(p) {
+  return state.pieces.filter(x => x.groupId === p.groupId);
+}
+
+function separatePiece(p) {
+  const g = groupOf(p);
+  if (g.length <= 1) return false;
+  p.groupId = state.nextGid++;
+  return true;
+}
+
+/* ══════════════════════════════════════════════
+   HUD
+   ══════════════════════════════════════════════ */
+function updateHUD() { countEl.textContent = String(state.total); }
+function updateLevelLabel() {
+  const lv = LEVELS[state.level - 1];
+  let txt = `${lv.name} · 约${lv.target}块`;
+  if (state.img) {
+    const g = pickGrid(state.imgW, state.imgH, lv.target);
+    txt = `${lv.name} · ${g.n}块 (${g.C}×${g.R})`;
+  }
+  levelLabel.textContent = txt;
+}
+
+/* ══════════════════════════════════════════════
+   计时
+   ══════════════════════════════════════════════ */
+function resetTimer() {
+  clearInterval(state.timerId);
+  state.running = false;
+  state.elapsed = 0;
+  state.startTime = 0;
+  timerEl.textContent = '00:00';
+}
+function startTimer() {
+  if (state.running || !state.img) return;
+  state.running = true;
+  state.startTime = Date.now() - state.elapsed;
+  clearInterval(state.timerId);
+  state.timerId = setInterval(() => {
+    state.elapsed = Date.now() - state.startTime;
+    timerEl.textContent = fmtTime(state.elapsed);
+  }, 200);
+}
+function stopTimer() {
+  if (!state.running) return;
+  state.running = false;
+  clearInterval(state.timerId);
+  state.elapsed = Date.now() - state.startTime;
+  timerEl.textContent = fmtTime(state.elapsed);
+}
+
+/* ══════════════════════════════════════════════
+   模式
+   ══════════════════════════════════════════════ */
+function updateModeBtn() {
+  if (state.mode === 'group') {
+    btnMode.textContent = '🔗 分组';
+    btnMode.classList.remove('active');
+  } else {
+    btnMode.textContent = '✂️ 分离';
+    btnMode.classList.add('active');
+  }
+}
+
+btnMode.addEventListener('click', () => {
+  state.mode = state.mode === 'group' ? 'separate' : 'group';
+  updateModeBtn();
+  showTutorial(state.mode === 'group'
+    ? '分组模式：拖动 / 双击旋转整组'
+    : '分离模式：拖动 / 双击只操作单块');
+});
+
+/* ══════════════════════════════════════════════
+   新游戏
+   ══════════════════════════════════════════════ */
+function startNewGame() {
+  if (!state.img) return;
+
+  const lv = LEVELS[state.level - 1];
+  const g = pickGrid(state.imgW, state.imgH, lv.target);
+  state.cols = g.C;
+  state.rows = g.R;
+  state.total = g.n;
+
+  let bw, bh;
+  if (state.imgW >= state.imgH) {
+    bw = BOARD_LONG;
+    bh = BOARD_LONG * state.imgH / state.imgW;
+  } else {
+    bh = BOARD_LONG;
+    bw = BOARD_LONG * state.imgW / state.imgH;
+  }
+  state.boardW = bw;
+  state.boardH = bh;
+  state.pw = bw / state.cols;
+  state.ph = bh / state.rows;
+
+  const M = Math.round(0.34 * Math.min(state.pw, state.ph));
+  state.MX = M;
+  state.MY = M;
+  state.cw = state.pw + M * 2;
+  state.ch = state.ph + M * 2;
+
+  generateTabs();
+  buildAllPieces();
+  scatterPieces();
+  applyInitialRotation();
+  renderAllPieces();
+
+  resetTimer();
+  state.started = false;
+  updateHUD();
+  updateLevelLabel();
+
+  $('refImg').src = state.img.toDataURL('image/jpeg', 0.85);
+
+  emptyHint.classList.add('hidden');
+  $('btnShuffle').disabled = false;
+  $('btnRecut').disabled = false;
+  $('btnSubmit').disabled = false;
+  btnMode.disabled = false;
+
+  requestAnimationFrame(() => fitView());
+  showTutorial('拖动块拼合 · 双击旋转 90° · 顶部按钮切换分组 / 分离');
+}
+
+function reshuffleAll() {
+  if (!state.img || !state.total) return;
+
+  state.nextGid = 1;
+  for (const p of state.pieces) p.groupId = state.nextGid++;
+  scatterPieces();
+  applyInitialRotation();
+  renderAllPieces();
+  fitView();
+  showTutorial('已重新打乱（计时继续）');
+}
+
+/* ══════════════════════════════════════════════
+   吸附 & 合并
+   ══════════════════════════════════════════════ */
+function trySnapAndMerge(groupPieces) {
+  if (!groupPieces.length) return false;
+  if (groupPieces.some(p => ((p.rot % 360) + 360) % 360 !== 0)) return false;
+
+  const inGroup = new Set(groupPieces);
+  const snapDist = Math.max(state.pw, state.ph) * 0.62;
+  let best = null;
+
+  for (const p of groupPieces) {
+    for (const q of state.pieces) {
+      if (inGroup.has(q)) continue;
+      if (((q.rot % 360) + 360) % 360 !== 0) continue;
+
+      const dr = p.row - q.row;
+      const dc = p.col - q.col;
+      if (Math.abs(dr) + Math.abs(dc) !== 1) continue;
+
+      const expDX = dc * state.pw;
+      const expDY = dr * state.ph;
+      const actDX = p.x - q.x;
+      const actDY = p.y - q.y;
+
+      const d = Math.hypot(actDX - expDX, actDY - expDY);
+      if (d < snapDist && (!best || d < best.d)) {
+        best = { d, dx: expDX - actDX, dy: expDY - actDY, target: q };
+      }
+    }
+  }
+
+  if (!best) return false;
+
+  for (const p of groupPieces) setPiecePos(p, p.x + best.dx, p.y + best.dy);
+
+  const gid = best.target.groupId;
+  const changed = groupPieces.filter(p => p.groupId !== gid);
+  for (const p of groupPieces) p.groupId = gid;
+
+  // 重绘涉及的两个组
+  refreshGroupVisuals([...groupPieces, best.target]);
+  return true;
+}
+
+/* ══════════════════════════════════════════════
+   旋转（双击触发，90°）
+   ══════════════════════════════════════════════ */
+function rotatePiece(p) {
+  // 分离模式下只旋转单块
+  let group;
+  if (state.mode === 'separate') {
+    separatePiece(p);
+    group = [p];
+  } else {
+    group = groupOf(p);
+  }
+
+  if (group.length > 1) {
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+    for (const x of group) {
+      minX = Math.min(minX, x.x); maxX = Math.max(maxX, x.x);
+      minY = Math.min(minY, x.y); maxY = Math.max(maxY, x.y);
+    }
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+
+    for (const x of group) {
+      const dx = x.x - cx;
+      const dy = x.y - cy;
+      const nx = cx - dy;
+      const ny = cy + dx;
+
+      x.rot = ((x.rot + 90) % 360 + 360) % 360;
+      x.el.style.transform = `rotate(${x.rot}deg)`;
+      setPiecePos(x, nx, ny);
+    }
+
+    // 旋转后整组独立
+    const gid = state.nextGid++;
+    for (const x of group) x.groupId = gid;
+
+    refreshGroupVisuals(group);
+    showTutorial('整组旋转 90°（需转回 0° 才能吸附）');
+  } else {
+    p.rot = ((p.rot + 90) % 360 + 360) % 360;
+    p.el.style.transform = `rotate(${p.rot}deg)`;
+    renderPieceCanvas(p);
+
+    if (p.rot === 0) showTutorial('已恢复正方向');
+    else showTutorial(`旋转 ${p.rot}°（需转回 0° 才能吸附）`);
+  }
+}
+
+/* ══════════════════════════════════════════════
+   交互
+   ══════════════════════════════════════════════ */
+const pointers = new Map();
+let wDrag = null;
+let panState = null;
+let pinchState = null;
+let lastTap = { t: 0, piece: null };
+
+function isOverlayControl(target) {
+  return !!(target && target.closest && target.closest('#refToggle, #refPanel'));
+}
+
+stage.addEventListener('contextmenu', e => e.preventDefault());
+
+stage.addEventListener('pointerdown', e => {
+  // 原图按钮在舞台内。若在这里 setPointerCapture，click 会被重定向到 #stage，按钮收不到点击。
+  if (isOverlayControl(e.target)) return;
+
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (pointers.size === 2) {
+    if (wDrag) endWorldDrag();
+    panState = null;
+    stage.classList.remove('panning');
+
+    const [a, b] = [...pointers.values()];
+    pinchState = {
+      d: Math.hypot(a.x - b.x, a.y - b.y),
+      cx: (a.x + b.x) / 2,
+      cy: (a.y + b.y) / 2,
+      k: view.k, vx: view.x, vy: view.y,
+    };
+    return;
+  }
+  if (pointers.size > 2) return;
+
+  const pieceEl = e.target.closest('#world .piece');
+  if (pieceEl && pieceEl._piece) beginWorldDrag(e, pieceEl._piece);
+  else beginPan(e);
+});
+
+stage.addEventListener('pointermove', e => {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (pointers.size === 2 && pinchState) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (pinchState.d < 1) return;
+
+    const newK = Math.max(0.05, Math.min(8, pinchState.k * (d / pinchState.d)));
+    const sr = stage.getBoundingClientRect();
+    const cx = pinchState.cx - sr.left;
+    const cy = pinchState.cy - sr.top;
+    const ratio = newK / pinchState.k;
+
+    view.x = cx - (cx - pinchState.vx) * ratio;
+    view.y = cy - (cy - pinchState.vy) * ratio;
+    view.k = newK;
+    applyView();
+    return;
+  }
+
+  if (wDrag && e.pointerId === wDrag.id) { moveWorldDrag(e); return; }
+
+  if (panState && e.pointerId === panState.id) {
+    const dx = e.clientX - panState.startX;
+    const dy = e.clientY - panState.startY;
+    if (Math.hypot(dx, dy) > 3) panState.moved = true;
+    view.x = panState.vx + dx;
+    view.y = panState.vy + dy;
+    applyView();
+  }
+});
+
+function stageUp(e) {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinchState = null;
+
+  if (wDrag && e.pointerId === wDrag.id) endWorldDrag();
+
+  if (panState && e.pointerId === panState.id) {
+    panState = null;
+    stage.classList.remove('panning');
+  }
+
+  if (pointers.size === 1) {
+    const [id] = [...pointers.keys()];
+    const p = pointers.get(id);
+    panState = {
+      id,
+      startX: p.x, startY: p.y,
+      vx: view.x, vy: view.y,
+      moved: false,
+    };
+  }
+}
+stage.addEventListener('pointerup', stageUp);
+stage.addEventListener('pointercancel', stageUp);
+
+stage.addEventListener('wheel', e => {
+  if (!state.img || isOverlayControl(e.target)) return;
+  e.preventDefault();
+
+  const factor = Math.exp(-e.deltaY * 0.0016);
+  const newK = Math.max(0.05, Math.min(8, view.k * factor));
+  const sr = stage.getBoundingClientRect();
+  const cx = e.clientX - sr.left;
+  const cy = e.clientY - sr.top;
+  const ratio = newK / view.k;
+
+  view.x = cx - (cx - view.x) * ratio;
+  view.y = cy - (cy - view.y) * ratio;
+  view.k = newK;
+  applyView();
+}, { passive: false });
+
+/* ══════════════════════════════════════════════
+   拖动块
+   ══════════════════════════════════════════════ */
+function beginWorldDrag(e, p) {
+  try { stage.setPointerCapture(e.pointerId); } catch (_) {}
+
+  const forceSep = state.mode === 'separate' ||
+                   e.altKey || e.shiftKey || e.ctrlKey || e.metaKey;
+
+  let groupPieces;
+  if (forceSep) {
+    const did = separatePiece(p);
+    if (did) refreshGroupVisuals([p]);
+    groupPieces = [p];
+  } else {
+    groupPieces = groupOf(p);
+  }
+
+  wDrag = {
+    id: e.pointerId,
+    piece: p,
+    groupPieces,
+    startScreenX: e.clientX,
+    startScreenY: e.clientY,
+    lastX: e.clientX,
+    lastY: e.clientY,
+    startW: null,
+    start: groupPieces.map(x => ({ x: x.x, y: x.y })),
+    started: false,
+  };
+
+  for (const x of groupPieces) {
+    x.el.classList.add('active');
+    x.el.style.zIndex = '9000';
+  }
+
+  startTimer();
+  if (!state.started) {
+    state.started = true;
+    showTutorial('拖动块拼合 · 双击旋转 · 组轮廓用彩色标识');
+  }
+}
+
+function moveWorldDrag(e) {
+  if (!wDrag) return;
+
+  wDrag.lastX = e.clientX;
+  wDrag.lastY = e.clientY;
+
+  if (!wDrag.started) {
+    const dx = e.clientX - wDrag.startScreenX;
+    const dy = e.clientY - wDrag.startScreenY;
+    if (Math.hypot(dx, dy) < 6) return;
+
+    wDrag.started = true;
+    wDrag.startW = screenToWorld(wDrag.startScreenX, wDrag.startScreenY);
+    wDrag.start = wDrag.groupPieces.map(x => ({ x: x.x, y: x.y }));
+  }
+
+  const w = screenToWorld(e.clientX, e.clientY);
+  const dx = w.x - wDrag.startW.x;
+  const dy = w.y - wDrag.startW.y;
+
+  for (let i = 0; i < wDrag.groupPieces.length; i++) {
+    const p = wDrag.groupPieces[i];
+    const s = wDrag.start[i];
+    setPiecePos(p, s.x + dx, s.y + dy);
+  }
+}
+
+function endWorldDrag() {
+  if (!wDrag) return;
+
+  for (const x of state.pieces) {
+    x.el.classList.remove('active');
+    if (x.el.style.zIndex === '9000') x.el.style.zIndex = '';
+  }
+
+  const movedDist = Math.hypot(
+    wDrag.lastX - wDrag.startScreenX,
+    wDrag.lastY - wDrag.startScreenY
+  );
+  const isTap = !wDrag.started || movedDist < TAP_SLOP;
+
+  if (isTap) {
+    const p = wDrag.piece;
+    const now = Date.now();
+    if (now - lastTap.t < 420 && lastTap.piece === p) {
+      rotatePiece(p);
+      lastTap = { t: 0, piece: null };
+    } else {
+      lastTap = { t: now, piece: p };
+    }
+  } else {
+    // 只在分组模式下尝试吸附
+    if (state.mode === 'group') {
+      trySnapAndMerge(wDrag.groupPieces);
+    }
+  }
+
+  wDrag = null;
+}
+
+function beginPan(e) {
+  try { stage.setPointerCapture(e.pointerId); } catch (_) {}
+  panState = {
+    id: e.pointerId,
+    startX: e.clientX,
+    startY: e.clientY,
+    vx: view.x,
+    vy: view.y,
+    moved: false,
+  };
+  stage.classList.add('panning');
+}
+
+/* ══════════════════════════════════════════════
+   提交校验
+   ══════════════════════════════════════════════ */
+function submitPuzzle() {
+  if (!state.img) { toast('先上传一张图片吧'); return; }
+
+  const rotated = state.pieces.filter(p => ((p.rot % 360) + 360) % 360 !== 0);
+  if (rotated.length > 0) {
+    toast(`有 ${rotated.length} 块方向不对，双击旋转到正方向`);
+    return;
+  }
+
+  const grid = new Map();
+  for (const p of state.pieces) grid.set(p.row * 1000 + p.col, p);
+
+  const TOL = Math.max(2, Math.min(state.pw, state.ph) * 0.14);
+  let bad = 0;
+
+  for (const p of state.pieces) {
+    if (p.col < state.cols - 1) {
+      const q = grid.get(p.row * 1000 + p.col + 1);
+      if (Math.abs(q.x - p.x - state.pw) > TOL || Math.abs(q.y - p.y) > TOL) bad++;
+    }
+    if (p.row < state.rows - 1) {
+      const q = grid.get((p.row + 1) * 1000 + p.col);
+      if (Math.abs(q.y - p.y - state.ph) > TOL || Math.abs(q.x - p.x) > TOL) bad++;
+    }
+  }
+
+  if (bad > 0) { toast(`还差一点点～有 ${bad} 处接缝没对齐`); return; }
+
+  stopTimer();
+  const lv = LEVELS[state.level - 1];
+  $('winTime').textContent = fmtTime(state.elapsed);
+  $('winInfo').textContent =
+    `${lv.name}难度 · ${state.cols}×${state.rows} · 共 ${state.total} 块`;
+  $('winOverlay').classList.add('show');
+}
+
+/* ══════════════════════════════════════════════
+   图片加载
+   ══════════════════════════════════════════════ */
+function loadFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+
+  img.onload = () => {
+    URL.revokeObjectURL(url);
+
+    let w = img.naturalWidth, h = img.naturalHeight;
+    const s = Math.min(1, MAX_IMG / Math.max(w, h));
+    w = Math.max(4, Math.round(w * s));
+    h = Math.max(4, Math.round(h * s));
+
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    cv.getContext('2d').drawImage(img, 0, 0, w, h);
+
+    state.img = cv;
+    state.imgW = w;
+    state.imgH = h;
+
+    startNewGame();
+  };
+
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    toast('图片加载失败，换一张试试');
+  };
+
+  img.src = url;
+}
+
+fileInput.addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if (f) loadFile(f);
+  fileInput.value = '';
+});
+
+$('btnUpload').addEventListener('click', () => fileInput.click());
+
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => {
+  e.preventDefault();
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) loadFile(f);
+});
+window.addEventListener('paste', e => {
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items) return;
+  for (const it of items) {
+    if (it.type.startsWith('image/')) { loadFile(it.getAsFile()); break; }
+  }
+});
+
+/* ══════════════════════════════════════════════
+   按钮
+   ══════════════════════════════════════════════ */
+$('btnFit').addEventListener('click', () => { if (state.img) fitView(); });
+$('btnShuffle').addEventListener('click', () => {
+  reshuffleAll();
+  $('winOverlay').classList.remove('show');
+});
+$('btnRecut').addEventListener('click', () => {
+  if (!state.img) return;
+  startNewGame();
+  $('winOverlay').classList.remove('show');
+});
+$('btnSubmit').addEventListener('click', submitPuzzle);
+$('btnWinClose').addEventListener('click', () => $('winOverlay').classList.remove('show'));
+$('btnWinAgain').addEventListener('click', () => {
+  $('winOverlay').classList.remove('show');
+  if (state.img) startNewGame();
+});
+
+const refToggle = $('refToggle');
+const refPanel = $('refPanel');
+refToggle.addEventListener('click', () => {
+  const show = refPanel.classList.toggle('show');
+  refToggle.textContent = show ? '🙈 隐藏' : '👁 原图';
+});
+
+rotRandom.addEventListener('change', () => {
+  state.randomRot = rotRandom.checked;
+});
+
+levelRange.addEventListener('input', () => {
+  state.level = +levelRange.value;
+  updateLevelLabel();
+});
+const applyLevel = debounce(() => { if (state.img) startNewGame(); }, 320);
+levelRange.addEventListener('change', () => {
+  state.level = +levelRange.value;
+  updateLevelLabel();
+  applyLevel();
+});
+
+window.addEventListener('resize', debounce(() => { if (state.img) fitView(); }, 220));
+
+/* ══════════════════════════════════════════════
+   初始化
+   ══════════════════════════════════════════════ */
+state.level = +levelRange.value;
+state.randomRot = rotRandom.checked;
+updateLevelLabel();
+updateModeBtn();
+applyView();
+</script>
+</body>
+</html>
