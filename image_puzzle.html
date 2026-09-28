@@ -193,7 +193,7 @@ body{
       <button type="button" class="star" data-level="4" aria-label="困难">★</button>
       <button type="button" class="star" data-level="5" aria-label="专家">★</button>
     </div>
-    <span id="levelLabel">入门 · 12 块</span>
+    <span id="levelLabel">约12块</span>
     <div class="spacer"></div>
     <label class="opt" title="新开局时每块随机旋转 0° / 90° / 180° / 270°">
       <input type="checkbox" id="rotRandom">随机旋转
@@ -759,14 +759,58 @@ function updateHUD() {
 }
 function updateLevelLabel() {
   const lv = LEVELS[state.level - 1];
-  let txt = `${lv.name} · 约${lv.target}块`;
+  let txt = `约${lv.target}块`;
   if (state.img) {
     const g = pickGrid(state.imgW, state.imgH, lv.target);
-    txt = `${lv.name} · ${g.n}块 (${g.C}×${g.R})`;
+    txt = `${g.n}块 (${g.C}×${g.R})`;
   }
   levelLabel.textContent = txt;
   for (const btn of levelStars.querySelectorAll('.star')) {
     btn.classList.toggle('on', +btn.dataset.level <= state.level);
+  }
+}
+
+let audioCtx = null;
+function ensureAudio() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  if (!audioCtx) audioCtx = new AC();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function playApplause() {
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const count = 14;
+  for (let i = 0; i < count; i++) {
+    const t = now + (i < 4 ? i * 0.09 : 0.36 + (i - 4) * (0.07 + Math.random() * 0.06));
+    const dur = 0.09;
+    const n = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    const buffer = ctx.createBuffer(1, n, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let s = 0; s < n; s++) {
+      data[s] = (Math.random() * 2 - 1) * Math.exp(-s / (ctx.sampleRate * 0.012));
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 900 + Math.random() * 2200;
+    filter.Q.value = 0.6;
+    const gain = ctx.createGain();
+    const vol = 0.35 + Math.random() * 0.45;
+    gain.gain.setValueAtTime(vol, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    const pan = ctx.createStereoPanner();
+    pan.pan.value = Math.random() * 1.4 - 0.7;
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(pan);
+    pan.connect(ctx.destination);
+    src.start(t);
+    src.stop(t + dur + 0.02);
   }
 }
 
@@ -1143,6 +1187,8 @@ function isOverlayControl(target) {
 
 stage.addEventListener('contextmenu', e => e.preventDefault());
 
+stage.addEventListener('pointerdown', () => { ensureAudio(); }, { once: true });
+
 stage.addEventListener('pointerdown', e => {
   // 原图按钮在舞台内。若在这里 setPointerCapture，click 会被重定向到 #stage，按钮收不到点击。
   if (isOverlayControl(e.target)) return;
@@ -1397,6 +1443,7 @@ function finishPuzzle() {
   $('winInfo').textContent =
     `${lv.name}难度 · ${state.cols}×${state.rows} · 共 ${state.total} 块`;
   $('winOverlay').classList.add('show');
+  playApplause();
   scheduleSave();
 }
 
